@@ -89,37 +89,6 @@ def clean_class_functions(content):
     in_multi_line_comment = False  # 是否在多行注释内
 
     while index < len(content):
-        # This is to keep the comment in the stripped content. and avoid the '(' and ')' in the comment to impact the following process.
-
-        # if in_single_line_comment:
-        #     if content[index] == '\n':
-        #         in_single_line_comment = False
-        #     result.append(content[index])  # add each character into the result.
-        #     content = content[:index] + content[index + 1:]  # content offset with 1 character.
-        #     continue
-
-        # if in_multi_line_comment:
-        #     if content[index:index + 2] == '*/':
-        #         in_multi_line_comment = False
-        #         result.append(content[index:index + 2])
-        #         content = content[:index] + content[index + 2:]
-        #         continue
-        #     result.append(content[index])
-        #     content = content[:index] + content[index + 1:]
-        #     continue
-
-        # if content[index:index + 2] == '//':
-        #     in_single_line_comment = True
-        #     result.append(content[index:index + 2])
-        #     content = content[:index] + content[index + 2:]
-        #     continue
-
-        # if content[index:index + 2] == '/*':
-        #     in_multi_line_comment = True
-        #     result.append(content[index:index + 2])  # add '/*' into the result.
-        #     content = content[:index] + content[index + 2:]  # content offset with 2 characters.
-        #     continue
-
         content = skip_line(content, index)
         # print(content)
 
