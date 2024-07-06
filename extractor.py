@@ -12,6 +12,7 @@ import subprocess
 
 MAX_CHAR_BEFORE_COMMENT = 15
 MAX_TEMPLATE_HEAD_LEN = 128
+TRIM_WORDS = {"ALWAYS_INLINE " : "", "noexcept ":""}
 
 def process_file(src_file_path, dest_dir_path):
     os.makedirs(dest_dir_path, exist_ok=True)
@@ -134,6 +135,10 @@ def align_template_function(content):
 
     return content[:cur_CRLF_pos] + " " + stripped_function_str + content[next_CRLF_pos:]
 
+def remove_keyword(content):
+    for word in TRIM_WORDS:
+        content = content.replace(word, "")
+    return content
 
 # core function
 def trim(content):
@@ -160,6 +165,7 @@ def clean_class_functions(content):
     index = 0  # 当前解析的字符位置
     function_depth = None  # 函数定义开始的大括号深度
     last_function_index = None  # 记录最后一个函数定义的位置
+    content = remove_keyword(content)
 
     while index < len(content):
         content, is_trimmed = trim_line(content, index)
