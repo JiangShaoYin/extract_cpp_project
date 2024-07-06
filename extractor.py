@@ -1,11 +1,17 @@
 #!/usr/local/anaconda3/bin/python3
 
-from asyncio.proactor_events import constants
+from asyncio.proactor_events import _ProactorDuplexPipeTransport, constants
 from operator import is_
 import os
+import re
 import sys
 import shutil
 import concurrent.futures
+from webbrowser import get
+import subprocess
+
+MAX_CHAR_BEFORE_COMMENT = 15
+MAX_TEMPLATE_HEAD_LEN = 128
 
 def process_file(src_file_path, dest_dir_path):
     os.makedirs(dest_dir_path, exist_ok=True)
@@ -20,32 +26,67 @@ def process_file_multithreaded(filename, src_file_path, dest_dir_path):
         os.makedirs(dest_dir_path, exist_ok=True)
         shutil.copy(src_file_path, dest_dir_path)
 
-def trim_start_blank_line(str):
-    end = 0
-    while True:
-        if end >= len(str):
-            break
-        if str[end] != ' ' or str[end] != '\t':
-            return str
-        if str[end] == '\n':
-            end += 1
-            break
-        end += 1
-
-    print(f"end: {end}")
-    return str[end:]
 
 def clip_tail_semicolon(content):
     stripped_str = content.replace(" ;", ";")
     return stripped_str
 
+
+def get_comment_start_pos(content, comment_begin_str):
+    return content[:MAX_CHAR_BEFORE_COMMENT].find(comment_begin_str)
+
+def is_empty_str(content):
+    for char in content:
+        if char != ' ' and char != '\t' and char != '\n':
+            return False
+
+    return True
+
+# /n      //
+# /n      /**
+def is_next_line_start_comment(content):
+    if not content.startswith("\n"):
+        return False
+
+    next_CRLF_pos = 1 + content[1:].find("\n")
+
+    comment = content[1 : next_CRLF_pos]
+
+    pos1 = get_comment_start_pos(comment, "//")
+    pos2 = get_comment_start_pos(comment, "/**")
+
+    if pos1 == -1 and pos2 == -1:
+        return False
+
+    # here the content is definitely a comment, we want to ensure
+    if pos1 >= 0:
+        pos = pos1
+
+    if pos2 >= 0:
+        pos = pos2
+
+    if pos1 >= 0 and pos2 >= 0:
+        pos = min(pos1, pos2) + 1 # include the first \n character
+
+    return is_empty_str(content[1 : pos])
+
+# including blank characters
+def is_start_with(content, target):
+    pos = content.find(target)
+    if pos == -1:
+        return False
+    for c in content[:pos]:
+        if c != ' ' and c != '\t':
+            return False
+    return True
+
 def remove_comment(content):
-    if content.startswith("//"):
+    if is_start_with(content, "//"):
         end_pos = content.find("\n")
         if len(content) >= end_pos:
             return content[end_pos:]
 
-    if content.startswith("/**"):
+    if is_start_with(content, "/**"):
         end_str = "*/"
         end_pos = content.find("*/") + len(end_str)
 
@@ -54,23 +95,64 @@ def remove_comment(content):
 
     return content
 
-def trim(content):
-    if content.startswith("...\n"):
-        return content[4:]
-    if content.startswith("... \n"):
-        return content[5:]
-    if content.startswith("\n  ... "):
-        return content[7:]
 
+
+def align_str_in_bracket(content):
+    if not content.startswith("("):
+        return content
+
+    right_bracket_pos = content.find(")")
+
+    sub_str = content[:right_bracket_pos + 1]
+    sub_str = sub_str.replace('\n', '')
+
+    items = sub_str.split(" ")
+    result = [item for item in items if item != '']
+
+    return " ".join(result) + content[right_bracket_pos + 1:]
+
+
+def align_template_function(content):
+    if not content.startswith("template <"):
+        return content
+
+    cur_CRLF_pos = content[:MAX_TEMPLATE_HEAD_LEN].find("\n")
+    next_CRLF_pos = cur_CRLF_pos + 1 + content[cur_CRLF_pos + 1:].find("\n")
+    function_str = content[cur_CRLF_pos + 1:next_CRLF_pos]
+
+    if "(" not in function_str or ")" not in function_str:
+        return content
+
+    function_start_pos = 0
+    for c in function_str:
+        if c == ' ' or c == '\t':
+            function_start_pos += 1
+            continue
+        break
+
+    stripped_function_str = function_str[function_start_pos:]
+
+    return content[:cur_CRLF_pos] + " " + stripped_function_str + content[next_CRLF_pos:]
+
+
+# core function
+def trim(content):
     content = remove_comment(content)
-    content = trim_start_blank_line(content)
+    content = align_template_function(content)
+    content = align_str_in_bracket(content)
     return content
 
 
-def skip_line(str, index):
-    pre_content = str[:index]
+def trim_line(str, index):
     content = str[index:]
-    return pre_content + trim(content)
+
+    trimmed = trim(content)
+    if trimmed == content:
+        return str, False
+
+    pre_content = str[:index]
+    return pre_content + trimmed, True
+
 
 def clean_class_functions(content):
     result = []
@@ -80,8 +162,9 @@ def clean_class_functions(content):
     last_function_index = None  # 记录最后一个函数定义的位置
 
     while index < len(content):
-        content = skip_line(content, index)
-        # print(content)
+        content, is_trimmed = trim_line(content, index)
+        # if is_trimmed:
+        #     continue
 
         if content[index] == '{':
             depth += 1
@@ -92,8 +175,13 @@ def clean_class_functions(content):
 
         if content[index] == '}':
             if depth == function_depth:
-                # 函数结束，移除函数体并保留函数声明
-                result = result[:last_function_index] + [';']
+                last_char = result[last_function_index - 1]
+
+                if last_char == ' ':
+                    result = result[:last_function_index - 1] + [';']
+                else:
+                    result = result[:last_function_index] + [';']
+
                 function_depth = None
                 last_function_index = None
                 index += 1  # 跳过当前的 '}'
@@ -111,7 +199,6 @@ def clean_class_functions(content):
 def remove_blank_lines_between_functions(content):
     lines = content.split('\n')
     result_lines = []
-    pre_line = None
     for line in lines:
         if line == "":
             continue
@@ -134,7 +221,7 @@ def process_file(src_file_path, dest_dir_path):
         file.write(new_content)
     print(f"write to: {dest_file_path}")
 
-def process_header_files(path):
+def run(path):
     if os.path.isfile(path):
         dst_dir = "./tmp/dst"
         src_dir = "./tmp/src"
@@ -144,7 +231,8 @@ def process_header_files(path):
         if not os.path.exists(src_filename):
             os.makedirs(src_dir, exist_ok=True)
             os.makedirs(dst_dir, exist_ok=True)
-            shutil.copy(path, src_dir)
+            # shutil.copy(path, src_dir)
+        subprocess.call(['cp', path, src_dir])
 
         process_file(src_filename, dst_dir)
         return
@@ -172,4 +260,4 @@ def process_header_files(path):
             except Exception as e:
                 print(f"Error processing file: {e}")
 
-process_header_files(sys.argv[1])
+run(sys.argv[1])
