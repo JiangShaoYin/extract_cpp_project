@@ -7,9 +7,7 @@ import sys
 import shutil
 import concurrent.futures
 
-
 def process_file(src_file_path, dest_dir_path):
-    # Placeholder for the actual file processing logic
     os.makedirs(dest_dir_path, exist_ok=True)
     dest_file_path = os.path.join(dest_dir_path, os.path.basename(src_file_path))
     shutil.copy(src_file_path, dest_file_path)
@@ -22,10 +20,8 @@ def process_file_multithreaded(filename, src_file_path, dest_dir_path):
         os.makedirs(dest_dir_path, exist_ok=True)
         shutil.copy(src_file_path, dest_dir_path)
 
-
 def trim_start_blank_line(str):
     end = 0
-
     while True:
         if end >= len(str):
             break
@@ -39,13 +35,11 @@ def trim_start_blank_line(str):
     print(f"end: {end}")
     return str[end:]
 
-
 def clip_tail_semicolon(content):
     stripped_str = content.replace(" ;", ";")
     return stripped_str
 
 def remove_comment(content):
-    # single comment
     if content.startswith("//"):
         end_pos = content.find("\n")
         if len(content) >= end_pos:
@@ -85,9 +79,6 @@ def clean_class_functions(content):
     function_depth = None  # 函数定义开始的大括号深度
     last_function_index = None  # 记录最后一个函数定义的位置
 
-    in_single_line_comment = False  # 是否在单行注释内
-    in_multi_line_comment = False  # 是否在多行注释内
-
     while index < len(content):
         content = skip_line(content, index)
         # print(content)
@@ -117,7 +108,6 @@ def clean_class_functions(content):
     res = ''.join(result)
     return res.replace(";}", ";")
 
-
 def remove_blank_lines_between_functions(content):
     lines = content.split('\n')
     result_lines = []
@@ -129,7 +119,6 @@ def remove_blank_lines_between_functions(content):
 
     return '\n'.join(result_lines)
 
-
 def process_file(src_file_path, dest_dir_path):
     with open(src_file_path, 'r', encoding='utf-8') as file:
         content = file.read()
@@ -138,15 +127,12 @@ def process_file(src_file_path, dest_dir_path):
     new_content = remove_blank_lines_between_functions(new_content_with_blank)
 
     filename = os.path.basename(src_file_path)
-
     dest_file_path = os.path.join(dest_dir_path, filename)
-
     os.makedirs(dest_dir_path, exist_ok=True)
 
     with open(dest_file_path, 'w', encoding='utf-8') as file:
         file.write(new_content)
     print(f"write to: {dest_file_path}")
-
 
 def process_header_files(path):
     if os.path.isfile(path):
@@ -180,9 +166,6 @@ def process_header_files(path):
 
                 futures.append(executor.submit(process_file_multithreaded, filename, src_file_path, dest_dir_path))
 
-
-
-        # Ensure all futures are completed
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
